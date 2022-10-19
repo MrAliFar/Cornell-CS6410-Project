@@ -165,6 +165,7 @@ class individual:
                 response = response + data.decode()
             conn.close()
             self.spawn_handler(response, addr)
+        #print(f"{self.idx} exited its listener!")
     
     def poller(self):
         #while not self.decided:
@@ -176,6 +177,8 @@ class individual:
                 self.query_rnd = self.query_rnd + 1
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
@@ -202,6 +205,8 @@ class individual:
                 #print(f"{self.idx} phase two value in round {self.query_rnd} is {self.phase_two_value[self.query_rnd - 1]}")
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
@@ -217,6 +222,7 @@ class individual:
                 if self.decided:
                     self.phase_one_is_finished[self.query_rnd] = False
                 #print(f"{self.idx} finished phase two of round {self.query_rnd}")
+        #print(f"{self.idx} exited its poller!")
     
     def handler(self, msg:str, addr):
         splitted_msg = msg.split(":")
@@ -319,7 +325,7 @@ class individual:
                         #self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1])
                         global num_decided
                         if self.defuzzify(self.phase_two_value[msg_rnd - 1]) == self.defuzzify(self.agg_opinions[msg_rnd - 1]) and not self.defuzzify(self.agg_opinions[msg_rnd - 1]) == 1.5:
-                            print(f"{self.idx} is in case 1 in round {self.query_rnd}")
+                            #print(f"{self.idx} is in case 1 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1])
                                 
                             if self.query_rnd == msg_rnd:
@@ -334,25 +340,25 @@ class individual:
                                 self.phase_one_is_finished[msg_rnd] = False
 
                         elif self.defuzzify(self.phase_two_value[msg_rnd - 1]) == self.defuzzify(self.agg_opinions[msg_rnd - 1]) and self.defuzzify(self.agg_opinions[msg_rnd - 1]) == 1.5:
-                            print(f"{self.idx} is in case 2 in round {self.query_rnd}")
+                            #print(f"{self.idx} is in case 2 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1] + uniform(-0.5, 0.5))
                             with self.phase_one_is_finished_lock:
                                 self.phase_one_is_finished[msg_rnd] = False
                         
                         elif self.defuzzify(self.phase_two_value[msg_rnd - 1]) == 1.5 and not self.defuzzify(self.agg_opinions[msg_rnd - 1]) == 1.5:
-                            print(f"{self.idx} is in case 3 in round {self.query_rnd}")
+                            #print(f"{self.idx} is in case 3 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1])
                             with self.phase_one_is_finished_lock:
                                 self.phase_one_is_finished[msg_rnd] = False
                         
                         elif (not self.defuzzify(self.phase_two_value[msg_rnd - 1]) == 1.5) and self.defuzzify(self.agg_opinions[msg_rnd - 1]) == 1.5:
-                            print(f"{self.idx} is in case 4 in round {self.query_rnd}")
+                            #print(f"{self.idx} is in case 4 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1] + uniform(-0.5, 0.5))
                             with self.phase_one_is_finished_lock:
                                 self.phase_one_is_finished[msg_rnd] = False
                         
                         else:
-                            print(f"{self.idx} is in case 5 in round {self.query_rnd}")
+                            #print(f"{self.idx} is in case 5 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1])
                             with self.phase_one_is_finished_lock:
                                 self.phase_one_is_finished[msg_rnd] = False
@@ -384,8 +390,8 @@ def sample_individuals(indiv_idx):
 
 
 
-num_individuals = 7
-t = 1
+num_individuals = 11
+t = 2
 port_base = 5000
 ex_thr = 5
 alpha = 1
@@ -405,19 +411,19 @@ num_decided = 0
 num_decided_lock = threading.Lock()
 
 #manual_initial_opinion = [2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
-manual_initial_opinion = [1, 2, 1, 2, 1, 2, 1]
+#manual_initial_opinion = [2, 1, 2, 2, 1, 2]
 open("round_opinions_Fuzzy_Ben-Or.txt", "w").close()
 
 for i in range(num_individuals):
     individual_ports.append(port_base + i)
     #individual_opinions.append(randint(-1, 1))
     
-    #individual_opinions.append(randint(1, 2))
-    individual_opinions.append(manual_initial_opinion[i])
+    individual_opinions.append(randint(1, 2))
+    #individual_opinions.append(manual_initial_opinion[i])
     
     individual_membership_params_zero.append(1.5)
-    #individual_membership_params_half.append((1.45, 1.75))
-    individual_membership_params_half.append((1.5 - 1 / (3 * num_individuals), 1.5 + 1 / (3 * num_individuals)))
+    individual_membership_params_half.append((1.25, 1.75))
+    #individual_membership_params_half.append((1.5 - 1 / (3 * num_individuals), 1.5 + 1 / (3 * num_individuals)))
     individual_membership_params_one.append(1.5)
     individual_thresholds_zero.append(1.2)
     individual_thresholds_one.append(1.8)

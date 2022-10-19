@@ -101,6 +101,8 @@ class individual:
                 self.query_rnd = self.query_rnd + 1
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
@@ -126,6 +128,8 @@ class individual:
                 #print(f"{self.idx} started phase 2 in round {self.query_rnd}")
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
