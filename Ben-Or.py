@@ -1,3 +1,4 @@
+from concurrent.futures import thread
 import socket
 import threading
 from random import randint, sample
@@ -74,6 +75,8 @@ class individual:
             #with self.decided_lock:
             #    if self.decided:
             #        break
+            if num_decided == num_individuals:
+                break
             sck.listen()
             conn, addr = sck.accept()
             response_received = False
@@ -89,17 +92,25 @@ class individual:
             self.spawn_handler(response, addr)
     
     def poller(self):
-        while not self.decided:
+        #while not self.decided:
+        while True:
+            if num_decided == num_individuals:
+                break
             if not self.phase_one_is_finished[self.query_rnd]:
                 self.query_rnd = self.query_rnd + 1
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
                             #print(f"{self.idx} - rnd_opinions length is {len(self.rnd_opinions)}")
                             #print(f"self.query_rnd - 1 is {self.query_rnd - 1}")
-                            success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.rnd_opinions[self.query_rnd - 1]))
+                            if self.decided:
+                                success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.opinion))
+                            else:
+                                success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.rnd_opinions[self.query_rnd - 1]))
                         if success:
                             successful_queries.append(indiv)
                     for indiv in successful_queries:
@@ -108,17 +119,28 @@ class individual:
                     ############### Dangerous!!!! TODO:
                     self.phase_one_is_finished.append(True)
                     #self.phase_one_is_finished[self.query_rnd - 1] = True
+                if self.decided:
+                    self.phase = 2
+                    self.phase_two_value.append(-1)
             if self.phase == 2:
                 indiv_sample = sample_individuals(self.idx)
                 while not len(indiv_sample) == 0:
+                    if num_decided == num_individuals:
+                        break
                     successful_queries = []
                     for indiv in indiv_sample:
-                        success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.phase_two_value[self.query_rnd - 1]))
+                        with self.opinion_lock:
+                            if self.decided:
+                                success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.opinion))
+                            else:
+                                success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.phase_two_value[self.query_rnd - 1]))
                         if success:
                             successful_queries.append(indiv)
                     for indiv in successful_queries:
                         indiv_sample.remove(indiv)
                 self.phase = 1
+                if self.decided:
+                    self.phase_one_is_finished[self.query_rnd] = False
     
     def handler(self, msg:str, addr):
         splitted_msg = msg.split(":")
@@ -203,18 +225,19 @@ class individual:
                         #print(f"{self.idx} --- phase two - zero_cntr is {zero_cntr}")
                         #print(f"{self.idx} --- phase two - one_cntr is {one_cntr}")
                         #print(f"{self.idx} --- phase two - phase two messages are {self.phase_two_messages[msg_rnd-1]}")
-                            
+                        global num_decided    
                         if self.phase_two_value[msg_rnd - 1] == 0 and zero_cntr >= (num_individuals + t) / 2:
                             self.rnd_opinions[msg_rnd] = 0
-                                
-                            with self.phase_one_is_finished_lock:
-                                self.phase_one_is_finished[msg_rnd] = True
                                 
                             if self.query_rnd == msg_rnd:
                                 self.opinion = 0
                                 self.decided = True
+                                with num_decided_lock:
+                                    num_decided += 1
                                 print(f"Individual {self.idx} decided 0 - Round opinions are {self.rnd_opinions}")
-                            
+                            with self.phase_one_is_finished_lock:
+                                self.phase_one_is_finished[msg_rnd] = False
+
                         elif self.phase_two_value[msg_rnd - 1] == 0 and zero_cntr >= t + 1:
                             self.rnd_opinions[msg_rnd] = 0
                             with self.phase_one_is_finished_lock:
@@ -225,13 +248,15 @@ class individual:
                         elif self.phase_two_value[msg_rnd - 1] == 1 and one_cntr >= (num_individuals + t) / 2:
                             self.rnd_opinions[msg_rnd] = 1
                                 
-                            with self.phase_one_is_finished_lock:
-                                self.phase_one_is_finished[msg_rnd] = True
                             if self.query_rnd == msg_rnd:
                                 self.opinion = 1
                                 self.decided = True
+                                with num_decided_lock:
+                                    num_decided += 1
                                 print(f"Individual {self.idx} decided 1 - Round opinions are {self.rnd_opinions}")
-                            
+                            with self.phase_one_is_finished_lock:
+                                self.phase_one_is_finished[msg_rnd] = False
+
                         elif self.phase_two_value[msg_rnd - 1] == 1 and one_cntr >= t + 1:
                             self.rnd_opinions[msg_rnd] = 0
                             with self.phase_one_is_finished_lock:
@@ -287,6 +312,9 @@ individual_opinions = []
 individuals = {}
 threads = []
 
+num_decided = 0
+num_decided_lock = threading.Lock()
+
 manual_initial_opinion = [1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0]
 open("round_opinions_Ben-Or.txt", "w").close()
 
@@ -301,3 +329,6 @@ for i in range(num_individuals):
     threads.append(threading.Thread(target=indiv.listener, args=()))
     threads[-1].start()
 print(f"Initial opinions are {individual_opinions}")
+while num_decided < num_individuals:
+    continue
+print("Everyone decided!")
