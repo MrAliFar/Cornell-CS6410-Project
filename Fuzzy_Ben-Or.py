@@ -1,13 +1,12 @@
-from pprint import pprint
 import numpy as np
 import socket
 import threading
-from random import randint, uniform
+from random import randint, uniform, sample
 
 
 class individual:
 
-    def __init__(self, idx, init_op, ex_thr, membership_param_zero, membership_param_half, membership_param_one, threshold_zero, threshold_one, ip, port):
+    def __init__(self, idx, is_byz, init_op, ex_thr, membership_param_zero, membership_param_half, membership_param_one, threshold_zero, threshold_one, ip, port):
         ##### The individual's index
         self.idx = idx
         ##### The individual's opinion. It can be either inside {0,1}, or -1, which means that it
@@ -64,7 +63,7 @@ class individual:
         ##### A flag indicating that the handler should ignore phase two messages
         self.ignore_phase_two_messages = []
         ##### A flag indicating if the individual is Byzantine
-        self.is_byz = False
+        self.is_byz = is_byz
         ##### A flag indicating whether the node is listening for requests or not
         self.is_listening = True
         ##### The active queries in each query round
@@ -184,10 +183,14 @@ class individual:
                         with self.opinion_lock:
                             #print(f"{self.idx} - rnd_opinions length is {len(self.rnd_opinions)}")
                             #print(f"self.query_rnd - 1 is {self.query_rnd - 1}")
-                            if self.decided:
-                                success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.opinion + 1))
+                            if self.is_byz:
+                                #success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(randint(0, 1) + 1))
+                                success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(1.5))
                             else:
-                                success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.rnd_opinions[self.query_rnd - 1]))
+                                if self.decided:
+                                    success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.opinion + 1))
+                                else:
+                                    success = send_msg(indiv, "1:" + str(self.query_rnd) + ":" + str(self.rnd_opinions[self.query_rnd - 1]))
                         if success:
                             successful_queries.append(indiv)
                     for indiv in successful_queries:
@@ -210,10 +213,15 @@ class individual:
                     successful_queries = []
                     for indiv in indiv_sample:
                         with self.opinion_lock:
-                            if self.decided:
-                                success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.get_membership_zero(self.opinion + 1)) + ":" + str(self.get_membership_half(self.opinion + 1)) + ":" + str(self.get_membership_one(self.opinion + 1)))
+                            if self.is_byz:
+                                r = uniform(1, 2)
+                                #success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.get_membership_zero(r)) + ":" + str(self.get_membership_half(r)) + ":" + str(self.get_membership_one(r)))
+                                success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.get_membership_zero(1.5)) + ":" + str(self.get_membership_half(1.5)) + ":" + str(self.get_membership_one(1.5)))
                             else:
-                                success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.phase_two_membership_zero[self.query_rnd - 1]) + ":" + str(self.phase_two_membership_half[self.query_rnd - 1]) + ":" + str(self.phase_two_membership_one[self.query_rnd - 1]))
+                                if self.decided:
+                                    success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.get_membership_zero(self.opinion + 1)) + ":" + str(self.get_membership_half(self.opinion + 1)) + ":" + str(self.get_membership_one(self.opinion + 1)))
+                                else:
+                                    success = send_msg(indiv, "2:" + str(self.query_rnd) + ":" + str(self.phase_two_membership_zero[self.query_rnd - 1]) + ":" + str(self.phase_two_membership_half[self.query_rnd - 1]) + ":" + str(self.phase_two_membership_one[self.query_rnd - 1]))
                         if success:
                             successful_queries.append(indiv)
                     for indiv in successful_queries:
@@ -328,7 +336,7 @@ class individual:
                             #print(f"{self.idx} is in case 1 in round {self.query_rnd}")
                             self.rnd_opinions[msg_rnd] = self.defuzzify(self.agg_opinions[msg_rnd - 1])
                                 
-                            if self.query_rnd == msg_rnd:
+                            if self.query_rnd == msg_rnd and not self.is_byz:
                                 self.opinion = self.defuzzify(self.agg_opinions[msg_rnd - 1]) - 1
                                 self.decided = True
                                 with num_decided_lock:
@@ -390,9 +398,9 @@ def sample_individuals(indiv_idx):
 
 
 
-num_individuals = 11
+num_individuals = 10
 t = 2
-port_base = 5000
+port_base = 5030
 ex_thr = 5
 alpha = 1
 beta = 2
@@ -406,6 +414,7 @@ individual_thresholds_zero = []
 individual_thresholds_one = []
 individuals = {}
 threads = []
+indivs = []
 
 num_decided = 0
 num_decided_lock = threading.Lock()
@@ -428,9 +437,19 @@ for i in range(num_individuals):
     individual_thresholds_zero.append(1.2)
     individual_thresholds_one.append(1.8)
 
+byz_indices = np.sort(sample(list(range(num_individuals)), t))
+
+print(f"Byzantine nodes are: {byz_indices}")
+
+num_decided = len(byz_indices)
+num_decided_lock = threading.Lock()
+
 for i in range(num_individuals):
-    indiv = individual(i, individual_opinions[i], ex_thr, individual_membership_params_zero[i], individual_membership_params_half[i], individual_membership_params_one[i], individual_thresholds_zero[i], individual_thresholds_one[i], "127.0.0.1", individual_ports[i])
-    threads.append(threading.Thread(target=indiv.listener, args=()))
+    if i in byz_indices:
+        indivs.append(individual(i, 1, individual_opinions[i], ex_thr, individual_membership_params_zero[i], individual_membership_params_half[i], individual_membership_params_one[i], individual_thresholds_zero[i], individual_thresholds_one[i], "127.0.0.1", individual_ports[i]))
+    else:
+        indivs.append(individual(i, 0, individual_opinions[i], ex_thr, individual_membership_params_zero[i], individual_membership_params_half[i], individual_membership_params_one[i], individual_thresholds_zero[i], individual_thresholds_one[i], "127.0.0.1", individual_ports[i]))
+    threads.append(threading.Thread(target=indivs[i].listener, args=()))
     threads[-1].start()
 print(f"Initial opinions are {individual_opinions}")
 while num_decided < num_individuals:
